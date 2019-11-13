@@ -1,0 +1,10 @@
+{
+    "originHost": "1.client.ccg-go",
+    "originRealm": "client.ccg-go",
+    "diameterServerAddr": "10.253.191.56:16553",
+    "localRESTServerAddr": ":8080",
+    "extraDiameterXML": "vendor.xml",
+    "dumpMessage": false,
+    "dumpPCAP": false,
+    "dumpFile": "ccg-go.pcap"
+}
