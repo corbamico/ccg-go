@@ -4,7 +4,7 @@
     "diameterServerAddr": "10.253.191.56:16553",
     "localRESTServerAddr": ":8080",
     "extraDiameterXML": "vendor.xml",
-    "dumpMessage": false,
+    "dumpMessage": true,
     "dumpPCAP": false,
     "dumpFile": "ccg-go.pcap"
 }

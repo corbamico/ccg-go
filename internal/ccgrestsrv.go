@@ -46,6 +46,6 @@ func (s *CCGRestService) Run() {
 	})
 
 	//3. listen and Serve
-	log.Printf("REST Server Serve at %s\n", configs.localRESTServerAddr)
-	log.Fatal(http.ListenAndServe(configs.localRESTServerAddr, nil))
+	log.Printf("REST Server Serve at %s\n", configs.LocalRESTServerAddr)
+	log.Fatal(http.ListenAndServe(configs.LocalRESTServerAddr, nil))
 }

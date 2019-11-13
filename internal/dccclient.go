@@ -20,19 +20,20 @@ import (
 	"github.com/fiorix/go-diameter/v4/diam/sm"
 	"github.com/fiorix/go-diameter/v4/diam/sm/smpeer"
 	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcapgo"
 )
 
 //Settings for this program
 type Settings struct {
-	originHost          string
-	originRealm         string
-	diameterServerAddr  string
-	localRESTServerAddr string
-	extraDiameterXML    string
-	dumpMessage         bool
-	dumpPCAP            bool
-	dumpFile            string
+	OriginHost          string
+	OriginRealm         string
+	DiameterServerAddr  string
+	LocalRESTServerAddr string
+	ExtraDiameterXML    string
+	DumpMessage         bool
+	DumpPCAP            bool
+	DumpFile            string
 }
 
 type diamClient struct {
@@ -64,17 +65,19 @@ func LoadSettings(file string) (Settings, error) {
 		return configs, err
 	}
 	jsonParser := json.NewDecoder(configFile)
-	jsonParser.Decode(&configs)
-	if configs.extraDiameterXML != "" {
-		err = dict.Default.LoadFile(configs.extraDiameterXML)
+	if err = jsonParser.Decode(&configs); err != nil {
+		return configs, nil
+	}
+	if configs.ExtraDiameterXML != "" {
+		err = dict.Default.LoadFile(configs.ExtraDiameterXML)
 	}
 	return configs, nil
 }
 
 func newDiamClient(setting *Settings) diamClient {
 	cfg := &sm.Settings{
-		OriginHost:    datatype.DiameterIdentity(setting.originHost),
-		OriginRealm:   datatype.DiameterIdentity(setting.originRealm),
+		OriginHost:    datatype.DiameterIdentity(setting.OriginHost),
+		OriginRealm:   datatype.DiameterIdentity(setting.OriginRealm),
 		VendorID:      2011,
 		ProductName:   "ccg-go",
 		OriginStateID: datatype.Unsigned32(time.Now().Unix()),
@@ -100,7 +103,7 @@ func newDiamClient(setting *Settings) diamClient {
 			rx:   make(chan message, 1000),
 			pcap: make(chan message, 1000),
 		},
-		serverAddress: setting.diameterServerAddr,
+		serverAddress: setting.DiameterServerAddr,
 	}
 }
 
@@ -117,18 +120,11 @@ func (c *diamClient) cleanup() {
 func (c *diamClient) run() {
 	var err error
 	var conn diam.Conn
-	//step 0. arm ctrl-c handler
-	ctrl := make(chan os.Signal, 1)
-	signal.Notify(ctrl, os.Interrupt, os.Kill)
-	go signalHandler(ctrl, c)
 
-	//step 1. create background pcap writing go-rountine
-	go pcapWriteHandler(c)
-
-	//step 2. arm "CCA" handler
+	//step 1. arm "CCA" handler
 	c.sm.HandleFunc("CCA", func(con diam.Conn, m *diam.Message) {
 		//1. dump in console
-		if configs.dumpMessage {
+		if configs.DumpMessage {
 			log.Printf("Recieve CCA from %s\n%s", con.RemoteAddr(), m)
 		}
 		//2. dump in pcap file
@@ -142,13 +138,21 @@ func (c *diamClient) run() {
 		c.channel.rx <- message{json}
 	})
 
-	//step 3. connect to diameter server
+	//step 2. connect to diameter server
 	if conn, err = c.client.DialNetwork("tcp", c.serverAddress); err != nil {
 		log.Fatalf("Client connect to server failed(%s).\n", err)
 	}
 	log.Printf("Client connect to server(%s) sucess.\n", c.serverAddress)
 
-	//step 4. recieving message from chan forever
+	//step 3. arm ctrl-c handler
+	ctrl := make(chan os.Signal, 1)
+	signal.Notify(ctrl, os.Interrupt, os.Kill)
+	go signalHandler(ctrl, c)
+
+	//step 4. create background pcap writing go-rountine
+	go pcapWriteHandler(c)
+
+	//step 5. recieving message from chan forever
 	for {
 		select {
 		case <-conn.(diam.CloseNotifier).CloseNotify():
@@ -179,7 +183,7 @@ func (c *diamClient) sendCCR(json []byte) {
 	//CommandCode,272,Credit Control;ApplicationId=4, Diameter Credit Control Application
 	m := diam.NewRequest(272, 4, nil)
 	meta, _ := smpeer.FromContext(c.conn.Context())
-	sid := fmt.Sprintf("%s;%d;%d", configs.originHost, time.Now().Unix(), rand.Uint32())
+	sid := fmt.Sprintf("%s;%d;%d", configs.OriginHost, time.Now().Unix(), rand.Uint32())
 	m.NewAVP(avp.OriginHost, avp.Mbit, 0, c.cfg.OriginHost)
 	m.NewAVP(avp.OriginRealm, avp.Mbit, 0, c.cfg.OriginRealm)
 	m.NewAVP(avp.DestinationHost, avp.Mbit, 0, meta.OriginHost)
@@ -198,7 +202,7 @@ func (c *diamClient) sendCCR(json []byte) {
 	}
 
 	//write in console
-	if configs.dumpMessage {
+	if configs.DumpMessage {
 		log.Printf("Sending CCR to %s\n%s", c.conn.RemoteAddr(), m)
 	}
 
@@ -218,20 +222,25 @@ func signalHandler(ctrl chan os.Signal, c *diamClient) {
 	os.Exit(0)
 }
 
+var dltUSER15 uint8 = 162
+
 func pcapWriteHandler(c *diamClient) {
 	var err error
 	ticker := time.NewTicker(10 * time.Second)
 
-	if !configs.dumpPCAP || configs.dumpFile == "" {
+	if !configs.DumpPCAP || configs.DumpFile == "" {
 		return
 	}
 
 	//1. create pcap file
-	if c.pcapFile, err = os.Create(configs.dumpFile); err != nil {
+	if c.pcapFile, err = os.Create(configs.DumpFile); err != nil {
 		log.Printf("Client create pcap file failed (%s).\n", err.Error())
 		return
 	}
-	log.Printf("Client create pcap file(%s) success.\n", configs.dumpFile)
+	log.Printf("Client create pcap file(%s) success.\n", configs.DumpFile)
+	c.pcapWriter = pcapgo.NewWriter(c.pcapFile)
+	c.pcapWriter.WriteFileHeader(66536, layers.LinkType(dltUSER15))
+	c.pcapFile.Sync()
 
 	//2. recieve message from pcap chan
 	for {
