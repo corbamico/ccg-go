@@ -119,7 +119,7 @@ func (c *diamClient) cleanup() {
 
 func (c *diamClient) run() {
 	var err error
-	var conn diam.Conn
+	//var conn diam.Conn
 
 	//step 1. arm "CCA" handler
 	c.sm.HandleFunc("CCA", func(con diam.Conn, m *diam.Message) {
@@ -139,7 +139,7 @@ func (c *diamClient) run() {
 	})
 
 	//step 2. connect to diameter server
-	if conn, err = c.client.DialNetwork("tcp", c.serverAddress); err != nil {
+	if c.conn, err = c.client.DialNetwork("tcp", c.serverAddress); err != nil {
 		log.Fatalf("Client connect to server failed(%s).\n", err)
 	}
 	log.Printf("Client connect to server(%s) sucess.\n", c.serverAddress)
@@ -155,7 +155,7 @@ func (c *diamClient) run() {
 	//step 5. recieving message from chan forever
 	for {
 		select {
-		case <-conn.(diam.CloseNotifier).CloseNotify():
+		case <-c.conn.(diam.CloseNotifier).CloseNotify():
 			c.cleanup()
 			log.Fatalln("Client disconnected.")
 			return

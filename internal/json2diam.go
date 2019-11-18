@@ -65,7 +65,7 @@ func jsonAVP(b *bytes.Buffer, avp *diam.AVP) {
 		fmt.Fprintf(b, "\"%d:%d\": ", avp.Code, avp.VendorID)
 	} else {
 		//1.2 print as "avp_name" if avp_name found
-		fmt.Fprintf(b, "\"%s\"", dictAVP.Name)
+		fmt.Fprintf(b, "\"%s\": ", dictAVP.Name)
 	}
 
 	//2. print avp value
@@ -149,9 +149,10 @@ func isJSON(s []byte) bool {
 func encode(key string, value interface{}) (avp *diam.AVP, err error) {
 	var avpcode int
 	var subAVP *diam.AVP
-	var dictAVP *dict.AVP
+	//var dictAVP *dict.AVP
 	var matched bool
 	vendoridInt := int(0)
+	dictAVP := &dict.AVP{Code: 0, VendorID: 0}
 
 	//1. handle key
 	if matched, _ = regexp.MatchString(`^[0-9]+$`, key); matched {

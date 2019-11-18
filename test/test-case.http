@@ -1,0 +1,19 @@
+POST htt://127.0.0.1:8080/ccr HTTP/1.1
+content-type: application/json
+
+{
+    "Service-Context-Id": "manager@huawei.com",
+    "CC-Request-Typ": 4,
+    "CC-Request-Number": 0,
+    "Service-Identifier" 0,
+    "Requested-Action": 0,
+    "Subscription-Id" :{
+        "Subscription-Id-Type": 0,
+        "Subscription-Id-Data": "86136"
+    },
+    "Service-Information":{
+        "20300:2011":{
+            "20340:2011": 0
+        }
+    }
+}
