@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/fiorix/go-diameter/v4/diam"
@@ -46,8 +47,16 @@ type diamClient struct {
 	pcapFile      *os.File
 	pcapWriter    *pcapgo.Writer
 }
+
+const (
+	messageGy = iota
+	messageSySLR
+	messageSySTR
+)
+
 type message struct {
-	json []byte
+	msgType int
+	json    []byte
 }
 type channels struct {
 	tx   chan message
@@ -69,9 +78,15 @@ func LoadSettings(file string) (Settings, error) {
 		return configs, nil
 	}
 	if configs.ExtraDiameterXML != "" {
-		err = dict.Default.LoadFile(configs.ExtraDiameterXML)
+		for _, file := range strings.Split(configs.ExtraDiameterXML, ",") {
+			if file != "" {
+				if err = dict.Default.LoadFile(file); err != nil {
+					return configs, err
+				}
+			}
+		}
 	}
-	return configs, nil
+	return configs, err
 }
 
 func newDiamClient(setting *Settings) diamClient {
@@ -92,6 +107,10 @@ func newDiamClient(setting *Settings) diamClient {
 		AuthApplicationID: []*diam.AVP{
 			//RFC 4006, Credit Control
 			diam.NewAVP(avp.AuthApplicationID, avp.Mbit, 0, datatype.Unsigned32(4)),
+		},
+		VendorSpecificApplicationID: []*diam.AVP{
+			//3GPP-Sy
+			diam.NewAVP(avp.AuthApplicationID, avp.Mbit, 0, datatype.Unsigned32(16777302)),
 		},
 	}
 	return diamClient{
@@ -121,22 +140,25 @@ func (c *diamClient) run() {
 	var err error
 	//var conn diam.Conn
 
-	//step 1. arm "CCA" handler
-	c.sm.HandleFunc("CCA", func(con diam.Conn, m *diam.Message) {
+	//step 1. arm "CCA/SLA/STA" handler
+	handler := func(con diam.Conn, m *diam.Message) {
 		//1. dump in console
 		if configs.DumpMessage {
-			log.Printf("Recieve CCA from %s\n%s", con.RemoteAddr(), m)
+			log.Printf("Recieve Message from %s\n%s", con.RemoteAddr(), m)
 		}
 		//2. dump in pcap file
 		if c.pcapWriter != nil {
 			if bytes, err := m.Serialize(); err == nil {
-				c.channel.pcap <- message{bytes}
+				c.channel.pcap <- message{json: bytes}
 			}
 		}
 		//3. return json to sendCCR (that wait on chan rx)
 		json, _ := JSON2DiamEncoding.Decode(m)
-		c.channel.rx <- message{json}
-	})
+		c.channel.rx <- message{json: json}
+	}
+	c.sm.HandleFunc(diam.CCA, handler)
+	c.sm.HandleFunc(diam.STA, handler)
+	c.sm.HandleFunc("SLA", handler)
 
 	//step 2. connect to diameter server
 	if c.conn, err = c.client.DialNetwork("tcp", c.serverAddress); err != nil {
@@ -159,40 +181,62 @@ func (c *diamClient) run() {
 			c.cleanup()
 			log.Fatalln("Client disconnected.")
 			return
+		case e := <-c.sm.ErrorReports():
+			log.Println("Client report error: ", e.String())
 		case msg, ok := <-c.channel.tx:
 			if ok {
-				c.sendCCR(msg.json)
+				c.sendCCR(msg.json, msg.msgType)
 			}
 		}
 	}
 }
 
-func (c *diamClient) sendJSON(json []byte) (res string) {
-	c.channel.tx <- message{json}
+func (c *diamClient) sendJSON(json []byte, msgType int) (res string) {
+	c.channel.tx <- message{json: json, msgType: msgType}
 	select {
 	case response, ok := <-c.channel.rx:
 		if ok {
 			res = string(response.json)
 		}
 	case <-time.After(2 * time.Second):
-		res = `{"error":"timeout for wating CCA"}`
+		res = `{"error":"timeout for wating reponse"}`
 	}
 	return
 }
-func (c *diamClient) sendCCR(json []byte) {
+func (c *diamClient) sendCCR(json []byte, msgType int) {
 	//CommandCode,272,Credit Control;ApplicationId=4, Diameter Credit Control Application
-	m := diam.NewRequest(272, 4, nil)
+	//CommandCode,8388635;ApplicationId=16777302, Sy
+	//CommandCode,275;ApplicationId=16777302, Sy STR
+
+	var m *diam.Message
 	meta, _ := smpeer.FromContext(c.conn.Context())
 	sid := fmt.Sprintf("%s;%d;%d", configs.OriginHost, time.Now().Unix(), rand.Uint32())
+
+	if messageGy == msgType {
+		m = diam.NewRequest(diam.CreditControl, 4, nil)
+
+		m.NewAVP(avp.AuthApplicationID, avp.Mbit, 0, datatype.Unsigned32(4))
+
+	} else if messageSySLR == msgType {
+		m = diam.NewRequest(8388635, 16777302, nil)
+		m.NewAVP(avp.AuthApplicationID, avp.Mbit, 0, datatype.Unsigned32(16777302))
+
+	} else if messageSySTR == msgType {
+		m = diam.NewRequest(diam.SessionTermination, 16777302, nil)
+		m.NewAVP(avp.AuthApplicationID, avp.Mbit, 0, datatype.Unsigned32(16777302))
+
+	} else {
+		return
+	}
+
 	m.NewAVP(avp.OriginHost, avp.Mbit, 0, c.cfg.OriginHost)
 	m.NewAVP(avp.OriginRealm, avp.Mbit, 0, c.cfg.OriginRealm)
 	m.NewAVP(avp.DestinationHost, avp.Mbit, 0, meta.OriginHost)
 	m.NewAVP(avp.DestinationRealm, avp.Mbit, 0, meta.OriginRealm)
-	m.NewAVP(avp.AuthApplicationID, avp.Mbit, 0, datatype.Unsigned32(4))
 
 	if err := JSON2DiamEncoding.Encode(m, json); err != nil {
 		res := fmt.Sprintf(`{"error":%s}`, jsonEscape((err.Error())))
-		c.channel.rx <- message{[]byte(res)}
+		c.channel.rx <- message{json: []byte(res)}
 		return
 	}
 
@@ -203,13 +247,13 @@ func (c *diamClient) sendCCR(json []byte) {
 
 	//write in console
 	if configs.DumpMessage {
-		log.Printf("Sending CCR to %s\n%s", c.conn.RemoteAddr(), m)
+		log.Printf("Sending message to %s\n%s", c.conn.RemoteAddr(), m)
 	}
 
 	//write pcap file if configured
 	if c.pcapWriter != nil {
 		if bytes, err := m.Serialize(); err == nil {
-			c.channel.pcap <- message{bytes}
+			c.channel.pcap <- message{json: bytes}
 		}
 	}
 	m.WriteTo(c.conn)

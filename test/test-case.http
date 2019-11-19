@@ -1,4 +1,4 @@
-POST htt://127.0.0.1:8080/ccr HTTP/1.1
+POST http://127.0.0.1:8080/ccr HTTP/1.1
 content-type: application/json
 
 {
@@ -15,5 +15,17 @@ content-type: application/json
         "20300:2011":{
             "20340:2011": 0
         }
+    }
+}
+
+### Sy
+POST http://127.0.0.1:8080/slr HTTP/1.1
+content-type: application/json
+
+{
+    "2904:10415": 0,
+    "Subscription-Id" :{
+        "Subscription-Id-Type": 0,
+        "Subscription-Id-Data": "86136"
     }
 }

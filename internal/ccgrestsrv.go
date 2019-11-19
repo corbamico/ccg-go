@@ -30,8 +30,18 @@ func (s *CCGRestService) Run() {
 		s.diamClient.run()
 	}()
 
-	//2. arm "/ccr" handler
-	http.HandleFunc("/ccr", func(w http.ResponseWriter, r *http.Request) {
+	//2. arm "/ccr/slr/str" handler
+	http.HandleFunc("/ccr", handler(s, messageGy))
+	http.HandleFunc("/slr", handler(s, messageSySLR))
+	http.HandleFunc("/str", handler(s, messageSySTR))
+
+	//3. listen and Serve
+	log.Printf("REST Server Serve at %s\n", configs.LocalRESTServerAddr)
+	log.Fatal(http.ListenAndServe(configs.LocalRESTServerAddr, nil))
+}
+
+func handler(s *CCGRestService, msgType int) func(w http.ResponseWriter, r *http.Request) {
+	h := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		if r.ContentLength == 0 || r.Method != "POST" {
 			io.WriteString(w, "{\"error\":\"invalid request\"}")
@@ -42,10 +52,7 @@ func (s *CCGRestService) Run() {
 			io.WriteString(w, "{\"error\":\"invalid request\"}")
 			return
 		}
-		io.WriteString(w, s.diamClient.sendJSON(body))
-	})
-
-	//3. listen and Serve
-	log.Printf("REST Server Serve at %s\n", configs.LocalRESTServerAddr)
-	log.Fatal(http.ListenAndServe(configs.LocalRESTServerAddr, nil))
+		io.WriteString(w, s.diamClient.sendJSON(body, msgType))
+	}
+	return h
 }
