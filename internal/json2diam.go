@@ -37,7 +37,7 @@ func (enc *Encoding) Encode(dst *diam.Message, src []byte) (err error) {
 	}
 	//2. range every key/value
 	for key, value := range js {
-		if avps, err = encode(key, value); err != nil {
+		if avps, err = encode(key, value, dst.Header.ApplicationID); err != nil {
 			return err
 		}
 		if avps.Code == avp.SessionID && avps.VendorID == 0 {
@@ -54,13 +54,13 @@ func (enc *Encoding) Encode(dst *diam.Message, src []byte) (err error) {
 //Decode  diam.Message into []byte
 func (enc *Encoding) Decode(src *diam.Message) (dst []byte, err error) {
 	var b bytes.Buffer
-	jsonGroupData(&b, src.AVP)
+	jsonGroupData(&b, src.AVP, src.Header.ApplicationID)
 	return b.Bytes(), nil
 }
 
-func jsonAVP(b *bytes.Buffer, avp *diam.AVP) {
+func jsonAVP(b *bytes.Buffer, avp *diam.AVP, appid uint32) {
 	//1. print avp name
-	if dictAVP, err := dict.Default.FindAVPWithVendor((uint32(4)), avp.Code, avp.VendorID); err != nil {
+	if dictAVP, err := dict.Default.FindAVPWithVendor(appid, avp.Code, avp.VendorID); err != nil {
 		//1.1 print as "20230:2011" if no avp_name found,
 		fmt.Fprintf(b, "\"%d:%d\": ", avp.Code, avp.VendorID)
 	} else {
@@ -74,15 +74,15 @@ func jsonAVP(b *bytes.Buffer, avp *diam.AVP) {
 		fmt.Fprint(b, jsonData(avp.Data))
 	} else {
 		//2.2 print group avp
-		jsonGroupData(b, avp.Data.(*diam.GroupedAVP).AVP)
+		jsonGroupData(b, avp.Data.(*diam.GroupedAVP).AVP, appid)
 	}
 
 }
-func jsonGroupData(b *bytes.Buffer, avps []*diam.AVP) {
+func jsonGroupData(b *bytes.Buffer, avps []*diam.AVP, appid uint32) {
 	fmt.Fprintln(b, "{")
 	for index, avp := range avps {
 		//1. print each line "avp_name:avp_value"
-		jsonAVP(b, avp)
+		jsonAVP(b, avp, appid)
 		//2. print "," for each line if not last line
 		if index != len(avps)-1 {
 			fmt.Fprintln(b, ",")
@@ -146,7 +146,7 @@ func isJSON(s []byte) bool {
 	return json.Unmarshal(s, &js) == nil
 }
 
-func encode(key string, value interface{}) (avp *diam.AVP, err error) {
+func encode(key string, value interface{}, appid uint32) (avp *diam.AVP, err error) {
 	var avpcode int
 	var subAVP *diam.AVP
 	//var dictAVP *dict.AVP
@@ -177,7 +177,7 @@ func encode(key string, value interface{}) (avp *diam.AVP, err error) {
 
 	} else {
 		//1.3. handle key as "avp_name"
-		if dictAVP, err = dict.Default.FindAVP(uint32(4), key); err != nil {
+		if dictAVP, err = dict.Default.FindAVP(appid, key); err != nil {
 			return nil, err
 		}
 	}
@@ -194,7 +194,7 @@ func encode(key string, value interface{}) (avp *diam.AVP, err error) {
 			AVP: make([]*diam.AVP, 0),
 		}
 		for key, value := range value.(map[string]interface{}) {
-			if subAVP, err = encode(key, value); err != nil {
+			if subAVP, err = encode(key, value, appid); err != nil {
 				return nil, err
 			}
 			grouped.AddAVP(subAVP)

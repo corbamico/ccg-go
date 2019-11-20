@@ -28,15 +28,17 @@ and send it to Diameter Server.
 ```json
     "originHost":          "1.client.ccg-go",
     "originRealm":         "client.ccg-go",
-    "diameterServerAddr":  "10.253.191.56:16553", //remote Diameter Server IP/Port
-    "localRESTServerAddr": ":8080",               //local address for REST server
-    "extraDiameterXML":    "vendor.xml",          //extra xml for diameter dictionary
-    "dumpMessage":         false,                 //print detail CCR/CCA in console?
-    "dumpPCAP":            false,                 //dump packet to pcap file?
-    "dumpFile":            "ccg-go.pcap"          //file name for wireshark
+    "diameterServerAddr":  "10.253.191.56:16553",      //remote Diameter Server IP/Port
+    "localRESTServerAddr": ":8080",                    //local address for REST server
+    "extraDiameterXML":    "vendor1.xml,vendor2.xml",  //extra xml for diameter dictionary
+    "dumpMessage":         false,                      //print detail CCR/CCA in console?
+    "dumpPCAP":            false,                      //dump packet to pcap file?
+    "dumpFile":            "ccg-go.pcap"               //file name for wireshark
 ```
 
 ## Log
+
+* v20191120 Support Sy SLR/STR  
 
 ## Todo List
 
@@ -46,6 +48,7 @@ and send it to Diameter Server.
 * [x] Return detail CCA message as json
 * [x] Write .pacap for wireshark
 * [x] Generate SessionID for automaticlly
+* [x] Support Sy SLR/STR  
 
 ## License
 
