@@ -149,8 +149,9 @@ func isJSON(s []byte) bool {
 func encode(key string, value interface{}, appid uint32) (avp *diam.AVP, err error) {
 	var avpcode int
 	var subAVP *diam.AVP
-	//var dictAVP *dict.AVP
 	var matched bool
+	var foundAVP bool
+
 	vendoridInt := int(0)
 	dictAVP := &dict.AVP{Code: 0, VendorID: 0}
 
@@ -180,14 +181,28 @@ func encode(key string, value interface{}, appid uint32) (avp *diam.AVP, err err
 		if dictAVP, err = dict.Default.FindAVP(appid, key); err != nil {
 			return nil, err
 		}
+		foundAVP = true
 	}
 
 	//2. handle value
-	//TODO, should be handle value according dictAVP found in dictionary
+	//should be handle value according dictAVP found in dictionary
+	//2020-08-20, Handle foundAVP
 	switch value.(type) {
 	case float64:
+		if foundAVP {
+			if avp := newAVP(dictAVP.Code, dictAVP.VendorID, value, dictAVP.Data.Type); avp != nil {
+				return avp, nil
+			}
+			return nil, errors.New("Encode Error, Mismatch Type with defined in Dictionary")
+		}
 		return diam.NewAVP(dictAVP.Code, 0, dictAVP.VendorID, datatype.Unsigned32(value.(float64))), nil
 	case string:
+		if foundAVP {
+			if avp := newAVP(dictAVP.Code, dictAVP.VendorID, value, dictAVP.Data.Type); avp != nil {
+				return avp, nil
+			}
+			return nil, errors.New("Encode Error, Mismatch Type with defined in Dictionary")
+		}
 		return diam.NewAVP(dictAVP.Code, 0, dictAVP.VendorID, datatype.UTF8String(value.(string))), nil
 	case map[string]interface{}:
 		grouped := &diam.GroupedAVP{
@@ -203,4 +218,44 @@ func encode(key string, value interface{}, appid uint32) (avp *diam.AVP, err err
 	default:
 		return nil, errors.New("Unknown Data Type")
 	}
+}
+
+func newAVP(avpcode uint32, vendorid uint32, value interface{}, typeid datatype.TypeID) *diam.AVP {
+	switch typeid {
+	case datatype.UnknownType:
+	case datatype.AddressType:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.Address(value.(string)))
+	case datatype.DiameterIdentityType:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.DiameterIdentity(value.(string)))
+	case datatype.DiameterURIType:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.DiameterURI(value.(string)))
+	case datatype.EnumeratedType:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.Enumerated(value.(float64)))
+	case datatype.Float32Type:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.Float32(value.(float64)))
+	case datatype.Float64Type:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.Float64(value.(float64)))
+	case datatype.GroupedType:
+	case datatype.IPFilterRuleType:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.IPFilterRule(value.(string)))
+	case datatype.IPv4Type:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.IPv4(value.(string)))
+	case datatype.Integer32Type:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.Integer32(value.(float64)))
+	case datatype.Integer64Type:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.Integer64(value.(float64)))
+	case datatype.OctetStringType:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.OctetString(value.(string)))
+	case datatype.TimeType:
+		if t, err := time.Parse(time.RFC3339, value.(string)); err == nil {
+			return diam.NewAVP(avpcode, 0, vendorid, datatype.Time(t))
+		}
+	case datatype.UTF8StringType:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.UTF8String(value.(string)))
+	case datatype.Unsigned32Type:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.Unsigned32(value.(float64)))
+	case datatype.Unsigned64Type:
+		return diam.NewAVP(avpcode, 0, vendorid, datatype.Unsigned64(value.(float64)))
+	}
+	return nil
 }
